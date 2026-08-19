@@ -1,0 +1,32 @@
+name: Robo 99 Viagens Automático
+
+on:
+  schedule:
+    # Roda todos os dias às 11h e 23h do horário UTC (08:00 e 20:00 no horário de Brasília)
+    - cron: '0 11,23 * * *'
+  workflow_dispatch: # Adiciona um botão para você rodar manualmente no GitHub quando quiser!
+
+jobs:
+  executar-robo:
+    runs-on: ubuntu-latest # O GitHub liga um Linux virtual rapidinho
+    
+    steps:
+      - name: Pegar os arquivos do repositório
+        uses: actions/checkout@v4
+
+      - name: Instalar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Instalar Bibliotecas (Pandas, Supabase e Playwright)
+        run: |
+          pip install pandas openpyxl playwright supabase
+          playwright install chromium
+
+      - name: Rodar o Robô
+        env:
+          # Aqui o GitHub injeta as senhas do cofre no momento de rodar
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          SENHA_99: ${{ secrets.SENHA_99 }}
+        run: python robo99.py
