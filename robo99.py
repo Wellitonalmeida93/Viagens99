@@ -10,6 +10,7 @@ from supabase import create_client, Client
 # 1. CONFIGURAÇÕES DO SUPABASE
 # ==========================================
 SUPABASE_URL = "https://ndnwtrnjclsbihvthdrg.supabase.co"
+# O 'os.environ.get' puxa a senha do cofre (ex: GitHub Secrets)
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY") 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
@@ -29,6 +30,7 @@ def run_robot():
     arquivos_baixados = []
 
     with sync_playwright() as p:
+        # headless=True faz o navegador rodar oculto em segundo plano
         browser = p.chromium.launch(headless=True)
         context = browser.new_context(accept_downloads=True)
         page = context.new_page()
@@ -64,53 +66,67 @@ def run_robot():
         hoje = datetime.now()
         
         # =================================================================
-        # LÓGICA DE VIRADA DE MÊS:
-        # Se for do dia 1 ao dia 5, tenta baixar o relatório do mês passado
+        # LÓGICA DE VIRADA DE MÊS (Dias 1 a 5)
         # =================================================================
         if hoje.day <= 5:
-            print("5a. [Oculto] Início do mês! Tentando baixar o relatório do mês passado...")
+            print("5a. [Oculto] Início do mês! Alterando filtro para 'Mês passado'...")
             try:
-                # O Regex procura botões que tenham "mês passado" ou "mês anterior" no nome
-                btn_mes_passado = page.get_by_role("button", name=re.compile(r"mês (passado|anterior)", re.IGNORECASE))
+                # 1. Clica na caixinha "Mês atual" para abrir as opções
+                page.get_by_text("Mês atual", exact=True).first.click()
+                time.sleep(1)
                 
-                if btn_mes_passado.is_visible(timeout=5000):
-                    with page.expect_download(timeout=60000) as download_info_ant:
-                        btn_mes_passado.click()
-                    
-                    download_ant = download_info_ant.value
-                    file_path_ant = os.path.join(DOWNLOAD_DIR, "mes_passado_" + download_ant.suggested_filename)
-                    download_ant.save_as(file_path_ant)
-                    arquivos_baixados.append(file_path_ant)
-                    print(f"   -> Download do mês passado concluído: {file_path_ant}")
-                else:
-                    print("   -> Botão de mês passado não encontrado na tela.")
+                # 2. Clica na opção "Mês passado" no menu suspenso
+                page.get_by_text("Mês passado", exact=True).click()
+                time.sleep(1)
+                
+                # 3. Clica em Filtrar para atualizar a tabela
+                page.get_by_role("button", name="Filtrar").click()
+                time.sleep(3)
+                
+                # 4. Baixa o relatório (usando Regex para achar o botão de Exportar)
+                with page.expect_download(timeout=60000) as download_info_ant:
+                    page.get_by_role("button", name=re.compile(r"Exportar", re.IGNORECASE)).click()
+                
+                download_ant = download_info_ant.value
+                file_path_ant = os.path.join(DOWNLOAD_DIR, "mes_passado_" + download_ant.suggested_filename)
+                download_ant.save_as(file_path_ant)
+                arquivos_baixados.append(file_path_ant)
+                print(f"   -> Download do MÊS PASSADO concluído: {file_path_ant}")
+                
+                # 5. Retorna o filtro para "Mês atual" para o robô continuar o trabalho normal
+                page.get_by_text("Mês passado", exact=True).first.click() 
+                time.sleep(1)
+                page.get_by_text("Mês atual", exact=True).click()
+                time.sleep(1)
+                page.get_by_role("button", name="Filtrar").click()
+                time.sleep(3)
+
             except Exception as e:
-                print("   -> Erro ao tentar baixar mês passado (ignorando e seguindo):", e)
-        
+                print("   -> Erro ao tentar baixar mês passado (verifique a interface):", e)
+
         # =================================================================
         # BAIXAR O MÊS ATUAL (Sempre executa)
         # =================================================================
-        print("5b. [Oculto] Baixando relatório deste mês...")
+        print("5b. [Oculto] Baixando relatório do 'Mês atual'...")
         with page.expect_download(timeout=60000) as download_info:
-            page.get_by_role("button", name="Exportar relatório deste mês").click()
+            page.get_by_role("button", name=re.compile(r"Exportar", re.IGNORECASE)).click()
         
         download = download_info.value
         file_path = os.path.join(DOWNLOAD_DIR, "mes_atual_" + download.suggested_filename)
         download.save_as(file_path)
         arquivos_baixados.append(file_path)
-        print(f"   -> Download do mês atual concluído: {file_path}")
+        print(f"   -> Download do MÊS ATUAL concluído: {file_path}")
 
         context.close()
         browser.close()
         
-        # Retorna a lista de arquivos baixados (pode ser 1 ou 2 arquivos)
         return arquivos_baixados
 
 def process_and_upload(file_path):
     print(f"\n6. Processando dados do arquivo: {os.path.basename(file_path)}")
     df = pd.read_excel(file_path)
 
-    # Tratamento da Tarifa
+    # Tratamento da Tarifa (Remove 'R$', pontos e troca vírgula por ponto)
     df['Tarifa_Limpa'] = (
         df['Tarifa']
         .astype(str)
@@ -121,10 +137,10 @@ def process_and_upload(file_path):
     )
     df['Tarifa_Limpa'] = pd.to_numeric(df['Tarifa_Limpa'], errors='coerce')
 
-    # Tratamento da Data
+    # Tratamento da Data (Formato DD/MM/YYYY para YYYY-MM-DD aceito pelo banco)
     df['Data_Origem_Formatada'] = pd.to_datetime(df['Data Origem'], format='%d/%m/%Y', errors='coerce').dt.strftime('%Y-%m-%d')
 
-    # Criação do DataFrame
+    # Criação do DataFrame no formato exato da sua tabela do Supabase
     df_supabase = pd.DataFrame({
         'id_corrida': df['ID da Corrida'].astype(str),
         'empresa': df['Empresa'],
@@ -146,11 +162,11 @@ def process_and_upload(file_path):
         'categoria': df['Categoria']
     })
 
-    # Converte nulos para None
+    # Converte os valores nulos do Pandas para None (padrão do banco de dados)
     records = df_supabase.where(pd.notnull(df_supabase), None).to_dict(orient='records')
 
     if len(records) > 0:
-        # Envia via upsert
+        # Envia via upsert (se a corrida já existir, ele só atualiza, não duplica)
         response = supabase.table('historico_viagens_99').upsert(records, on_conflict='id_corrida').execute()
         print("="*60)
         print(f" SUCESSO! {len(records)} viagens lidas e enviadas para o Supabase.")
@@ -161,7 +177,7 @@ def process_and_upload(file_path):
 if __name__ == "__main__":
     arquivos_para_processar = run_robot()
     
-    # Processa todos os arquivos que o robô baixou
+    # Processa todos os arquivos que o robô baixou na pasta
     for arquivo in arquivos_para_processar:
         if os.path.exists(arquivo):
             process_and_upload(arquivo)
