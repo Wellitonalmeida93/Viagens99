@@ -4,15 +4,25 @@ import re
 import pandas as pd
 from datetime import datetime
 from playwright.sync_api import sync_playwright
-from supabase import create_client, Client
+from sqlalchemy import create_engine, text
 
 # ==========================================
-# 1. CONFIGURAÇÕES DO SUPABASE
+# 1. CONFIGURAÇÕES DO NEON (POSTGRESQL)
 # ==========================================
-SUPABASE_URL = "https://ndnwtrnjclsbihvthdrg.supabase.co"
-# O 'os.environ.get' puxa a senha do cofre (ex: GitHub Secrets)
-SUPABASE_KEY = os.environ.get("SUPABASE_KEY") 
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+# Puxa exclusivamente do Cofre de Segredos (GitHub Secrets)
+DB_HOST = os.environ.get("DB_HOST_SUPA")
+DB_PORT = os.environ.get("DB_PORT_SUPA", "5432")
+DB_NAME = os.environ.get("DB_NAME_SUPA")
+DB_USER = os.environ.get("DB_USER_SUPA")
+DB_PASSWORD = os.environ.get("DB_PASSWORD_SUPA")
+
+# Validação para garantir que as variáveis do GitHub Secrets foram carregadas
+if not all([DB_HOST, DB_NAME, DB_USER, DB_PASSWORD]):
+    raise ValueError("ERRO: Uma ou mais variáveis de ambiente do banco de dados não foram encontradas nas Secrets!")
+
+# String de conexão do PostgreSQL
+DATABASE_URL = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}?sslmode=require"
+engine = create_engine(DATABASE_URL)
 
 # ==========================================
 # 2. CONFIGURAÇÕES DO ROBÔ 99
@@ -30,7 +40,6 @@ def run_robot():
     arquivos_baixados = []
 
     with sync_playwright() as p:
-        # headless=True faz o navegador rodar oculto em segundo plano
         browser = p.chromium.launch(headless=True)
         context = browser.new_context(accept_downloads=True)
         page = context.new_page()
@@ -71,19 +80,15 @@ def run_robot():
         if hoje.day <= 5:
             print("5a. [Oculto] Início do mês! Alterando filtro para 'Mês passado'...")
             try:
-                # 1. Clica na caixinha "Mês atual" para abrir as opções
                 page.get_by_text("Mês atual", exact=True).first.click()
                 time.sleep(1)
                 
-                # 2. Clica na opção "Mês passado" no menu suspenso
                 page.get_by_text("Mês passado", exact=True).click()
                 time.sleep(1)
                 
-                # 3. Clica em Filtrar para atualizar a tabela
                 page.get_by_role("button", name="Filtrar").click()
                 time.sleep(3)
                 
-                # 4. Baixa o relatório (usando Regex para achar o botão de Exportar)
                 with page.expect_download(timeout=60000) as download_info_ant:
                     page.get_by_role("button", name=re.compile(r"Exportar", re.IGNORECASE)).click()
                 
@@ -93,7 +98,6 @@ def run_robot():
                 arquivos_baixados.append(file_path_ant)
                 print(f"   -> Download do MÊS PASSADO concluído: {file_path_ant}")
                 
-                # 5. Retorna o filtro para "Mês atual" para o robô continuar o trabalho normal
                 page.get_by_text("Mês passado", exact=True).first.click() 
                 time.sleep(1)
                 page.get_by_text("Mês atual", exact=True).click()
@@ -126,7 +130,7 @@ def process_and_upload(file_path):
     print(f"\n6. Processando dados do arquivo: {os.path.basename(file_path)}")
     df = pd.read_excel(file_path)
 
-    # Tratamento da Tarifa (Remove 'R$', pontos e troca vírgula por ponto)
+    # Tratamento da Tarifa
     df['Tarifa_Limpa'] = (
         df['Tarifa']
         .astype(str)
@@ -137,11 +141,11 @@ def process_and_upload(file_path):
     )
     df['Tarifa_Limpa'] = pd.to_numeric(df['Tarifa_Limpa'], errors='coerce')
 
-    # Tratamento da Data (Formato DD/MM/YYYY para YYYY-MM-DD aceito pelo banco)
+    # Tratamento da Data
     df['Data_Origem_Formatada'] = pd.to_datetime(df['Data Origem'], format='%d/%m/%Y', errors='coerce').dt.strftime('%Y-%m-%d')
 
-    # Criação do DataFrame no formato exato da sua tabela do Supabase
-    df_supabase = pd.DataFrame({
+    # Mapeamento do DataFrame para a estrutura da tabela
+    df_neon = pd.DataFrame({
         'id_corrida': df['ID da Corrida'].astype(str),
         'empresa': df['Empresa'],
         'centro_custo': df['Centro de Custo'],
@@ -162,14 +166,49 @@ def process_and_upload(file_path):
         'categoria': df['Categoria']
     })
 
-    # Converte os valores nulos do Pandas para None (padrão do banco de dados)
-    records = df_supabase.where(pd.notnull(df_supabase), None).to_dict(orient='records')
+    if not df_neon.empty:
+        table_name = 'historico_viagens_99'
+        
+        # Estrutura SQL de UPSERT (Insere novos e atualiza existentes com base no id_corrida)
+        upsert_query = f"""
+            INSERT INTO {table_name} (
+                id_corrida, empresa, centro_custo, projeto, solicitante, 
+                nome_colaborador, email_colaborador, justificativa, tarifa, 
+                plataforma, data_origem, hora_origem, cidade_origem, 
+                endereco_origem, endereco_destino, km, duracao_min, categoria
+            ) VALUES (
+                :id_corrida, :empresa, :centro_custo, :projeto, :solicitante, 
+                :nome_colaborador, :email_colaborador, :justificativa, :tarifa, 
+                :plataforma, :data_origem, :hora_origem, :cidade_origem, 
+                :endereco_origem, :endereco_destino, :km, :duracao_min, :categoria
+            )
+            ON CONFLICT (id_corrida) DO UPDATE SET
+                empresa = EXCLUDED.empresa,
+                centro_custo = EXCLUDED.centro_custo,
+                projeto = EXCLUDED.projeto,
+                solicitante = EXCLUDED.solicitante,
+                nome_colaborador = EXCLUDED.nome_colaborador,
+                email_colaborador = EXCLUDED.email_colaborador,
+                justificativa = EXCLUDED.justificativa,
+                tarifa = EXCLUDED.tarifa,
+                plataforma = EXCLUDED.plataforma,
+                data_origem = EXCLUDED.data_origem,
+                hora_origem = EXCLUDED.hora_origem,
+                cidade_origem = EXCLUDED.cidade_origem,
+                endereco_origem = EXCLUDED.endereco_origem,
+                endereco_destino = EXCLUDED.endereco_destino,
+                km = EXCLUDED.km,
+                duracao_min = EXCLUDED.duracao_min,
+                categoria = EXCLUDED.categoria;
+        """
 
-    if len(records) > 0:
-        # Envia via upsert (se a corrida já existir, ele só atualiza, não duplica)
-        response = supabase.table('historico_viagens_99').upsert(records, on_conflict='id_corrida').execute()
+        records = df_neon.where(pd.notnull(df_neon), None).to_dict(orient='records')
+
+        with engine.begin() as connection:
+            connection.execute(text(upsert_query), records)
+
         print("="*60)
-        print(f" SUCESSO! {len(records)} viagens lidas e enviadas para o Supabase.")
+        print(f" SUCESSO! {len(records)} viagens lidas e enviadas para o Neon.")
         print("="*60)
     else:
         print(" -> O arquivo estava vazio ou sem dados válidos. Nenhuma viagem enviada.")
@@ -177,7 +216,6 @@ def process_and_upload(file_path):
 if __name__ == "__main__":
     arquivos_para_processar = run_robot()
     
-    # Processa todos os arquivos que o robô baixou na pasta
     for arquivo in arquivos_para_processar:
         if os.path.exists(arquivo):
             process_and_upload(arquivo)
