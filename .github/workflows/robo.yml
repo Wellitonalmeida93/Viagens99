@@ -2,14 +2,14 @@ name: Robo 99 Viagens Automático
 
 on:
   schedule:
-    # Roda todos os dias às 11h e 23h do horário UTC (08:00 e 20:00 no horário de Brasília)
-    - cron: '0 12,18 * * *'
-  workflow_dispatch: # Adiciona um botão para você rodar manualmente no GitHub quando quiser!
+    # Roda todos os dias às 12:17 UTC e 18:17 UTC (09:17 e 15:17 no horário de Brasília)
+    - cron: '17 12,18 * * *'
+  workflow_dispatch: # Permite executar manualmente pelo painel do GitHub
 
 jobs:
   executar-robo:
-    runs-on: ubuntu-latest # O GitHub liga um Linux virtual rapidinho
-    
+    runs-on: ubuntu-latest
+
     steps:
       - name: Pegar os arquivos do repositório
         uses: actions/checkout@v4
@@ -19,14 +19,18 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Instalar Bibliotecas (Pandas, Supabase e Playwright)
+      - name: Instalar Bibliotecas (Pandas, Playwright, SQLAlchemy e Psycopg2)
         run: |
-          pip install pandas openpyxl playwright supabase
+          pip install pandas openpyxl playwright psycopg2-binary sqlalchemy
           playwright install chromium
 
       - name: Rodar o Robô
         env:
-          # Aqui o GitHub injeta as senhas do cofre no momento de rodar
-          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          # Injeta os segredos do cofre nas variáveis de ambiente do script
+          DB_HOST_SUPA: ${{ secrets.DB_HOST_SUPA }}
+          DB_PORT_SUPA: ${{ secrets.DB_PORT_SUPA }}
+          DB_NAME_SUPA: ${{ secrets.DB_NAME_SUPA }}
+          DB_USER_SUPA: ${{ secrets.DB_USER_SUPA }}
+          DB_PASSWORD_SUPA: ${{ secrets.DB_PASSWORD_SUPA }}
           SENHA_99: ${{ secrets.SENHA_99 }}
         run: python robo99.py
