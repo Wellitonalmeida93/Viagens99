@@ -9,19 +9,17 @@ from sqlalchemy import create_engine, text
 # ==========================================
 # 1. CONFIGURAÇÕES DO NEON (POSTGRESQL)
 # ==========================================
-# Puxa exclusivamente do Cofre de Segredos (GitHub Secrets)
 DB_HOST = os.environ.get("DB_HOST_SUPA")
 DB_PORT = os.environ.get("DB_PORT_SUPA", "5432")
 DB_NAME = os.environ.get("DB_NAME_SUPA")
 DB_USER = os.environ.get("DB_USER_SUPA")
 DB_PASSWORD = os.environ.get("DB_PASSWORD_SUPA")
 
-# Validação para garantir que as variáveis do GitHub Secrets foram carregadas
 if not all([DB_HOST, DB_NAME, DB_USER, DB_PASSWORD]):
     raise ValueError("ERRO: Uma ou mais variáveis de ambiente do banco de dados não foram encontradas nas Secrets!")
 
-# String de conexão do PostgreSQL
-DATABASE_URL = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}?sslmode=require"
+# String de conexão do PostgreSQL (Driver explicitado para psycopg2)
+DATABASE_URL = f"postgresql+psycopg2://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}?sslmode=require"
 engine = create_engine(DATABASE_URL)
 
 # ==========================================
@@ -169,7 +167,6 @@ def process_and_upload(file_path):
     if not df_neon.empty:
         table_name = 'historico_viagens_99'
         
-        # Estrutura SQL de UPSERT (Insere novos e atualiza existentes com base no id_corrida)
         upsert_query = f"""
             INSERT INTO {table_name} (
                 id_corrida, empresa, centro_custo, projeto, solicitante, 
