@@ -19,14 +19,13 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Instalar Bibliotecas (Pandas, Playwright, SQLAlchemy e Psycopg2)
+      - name: Instalar Bibliotecas
         run: |
           pip install pandas openpyxl playwright psycopg2-binary sqlalchemy
           playwright install chromium
 
       - name: Rodar o Robô
         env:
-          # Injeta os segredos do cofre nas variáveis de ambiente do script
           DB_HOST_SUPA: ${{ secrets.DB_HOST_SUPA }}
           DB_PORT_SUPA: ${{ secrets.DB_PORT_SUPA }}
           DB_NAME_SUPA: ${{ secrets.DB_NAME_SUPA }}
