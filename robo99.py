@@ -73,10 +73,12 @@ def run_robot():
         campo_senha.fill(SENHA_99)
         time.sleep(1)
 
-        # Clica no checkbox e no botão Entrar
+        # Clica no checkbox
         page.locator(".checkbox").first.click()
         time.sleep(0.5)
-        page.get_by_role("button", name="Entrar").click()
+        
+        # Clica no botão Entrar procurando pelo texto exato
+        page.get_by_text("Entrar", exact=True).click()
         
         print("3. [Oculto] Aguardando o painel carregar...")
         page.wait_for_url("**/empresas.99app.com/**", timeout=60000)
