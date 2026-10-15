@@ -48,15 +48,26 @@ def run_robot():
         time.sleep(1)
 
         print("2. [Oculto] Preenchendo dados de acesso...")
-        page.get_by_role("textbox", name="Insira o telefone").click()
-        page.get_by_role("textbox", name="Insira o telefone").fill(TELEFONE_99)
-        time.sleep(0.5)
+        # Espera explícita pelo campo de telefone e preenchimento
+        campo_telefone = page.get_by_role("textbox", name="Insira o telefone")
+        campo_telefone.wait_for(state="visible", timeout=15000)
+        campo_telefone.click()
+        campo_telefone.fill(TELEFONE_99)
+        time.sleep(1)
 
-        page.get_by_role("textbox", name="Insira sua senha").click()
-        page.get_by_role("textbox", name="Insira sua senha").fill(SENHA_99)
-        time.sleep(0.5)
+        # DEBUG: Tira um print da tela ANTES de procurar a senha
+        page.screenshot(path="debug_antes_da_senha.png", full_page=True)
+        print("   [Debug] Print salvo como debug_antes_da_senha.png")
 
-        page.locator(".checkbox").click()
+        # Alteração do seletor da senha: usa tipo password ao invés de acessibilidade
+        campo_senha = page.locator("input[type='password']").first
+        campo_senha.wait_for(state="visible", timeout=15000)
+        campo_senha.click()
+        campo_senha.fill(SENHA_99)
+        time.sleep(1)
+
+        # Clica no checkbox e entra
+        page.locator(".checkbox").first.click()
         time.sleep(0.5)
         page.get_by_text("Entrar", exact=True).click()
         
