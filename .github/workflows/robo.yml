@@ -33,3 +33,11 @@ jobs:
           DB_PASSWORD_SUPA: ${{ secrets.DB_PASSWORD_SUPA }}
           SENHA_99: ${{ secrets.SENHA_99 }}
         run: python robo99.py
+
+      - name: Salvar Print de Erro (Debug)
+        if: always() # Garante que vai salvar mesmo se o script Python falhar com erro
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-screenshots
+          path: debug_antes_da_senha.png
+          retention-days: 3
