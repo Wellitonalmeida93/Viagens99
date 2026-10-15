@@ -48,28 +48,35 @@ def run_robot():
         time.sleep(1)
 
         print("2. [Oculto] Preenchendo dados de acesso...")
-        # Espera explícita pelo campo de telefone e preenchimento
+        
+        # NOVO PASSO: Clicar na aba "Entrar com senha" para exibir o campo correto
+        aba_senha = page.get_by_text("Entrar com senha")
+        aba_senha.wait_for(state="visible", timeout=15000)
+        aba_senha.click()
+        time.sleep(1)
+
+        # 1. Espera explícita pelo campo de telefone e preenchimento
         campo_telefone = page.get_by_role("textbox", name="Insira o telefone")
         campo_telefone.wait_for(state="visible", timeout=15000)
         campo_telefone.click()
         campo_telefone.fill(TELEFONE_99)
         time.sleep(1)
 
-        # DEBUG: Tira um print da tela ANTES de procurar a senha
+        # 2. DEBUG: Tira um print da tela ANTES de procurar a senha
         page.screenshot(path="debug_antes_da_senha.png", full_page=True)
         print("   [Debug] Print salvo como debug_antes_da_senha.png")
 
-        # Alteração do seletor da senha: usa tipo password ao invés de acessibilidade
+        # 3. Preenchimento da Senha (agora o campo deve estar visível)
         campo_senha = page.locator("input[type='password']").first
         campo_senha.wait_for(state="visible", timeout=15000)
         campo_senha.click()
         campo_senha.fill(SENHA_99)
         time.sleep(1)
 
-        # Clica no checkbox e entra
+        # Clica no checkbox e no botão Entrar
         page.locator(".checkbox").first.click()
         time.sleep(0.5)
-        page.get_by_text("Entrar", exact=True).click()
+        page.get_by_role("button", name="Entrar").click()
         
         print("3. [Oculto] Aguardando o painel carregar...")
         page.wait_for_url("**/empresas.99app.com/**", timeout=60000)
